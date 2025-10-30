@@ -1,0 +1,110 @@
+Test case 1
+const m = 7, n = 85;  
+var  i,x,y,z,q,r;  
+procedure mult; 
+   var a, b;  
+  begin 
+     a := x;  b := y; z := 0;   
+     while b > 0 do    
+     begin 
+        if x =1 then z := z+a fi;       
+        a := 2*a; 
+        b := b/2;     
+     end   
+  end;
+
+begin
+  x := m;
+  y := n;
+  call mult;
+end.
+
+Test case 2
+var x, y;
+begin
+	x := y * 2;
+end.
+
+Test case 3
+var x, y;
+begin
+ y := 3;
+ x := y + 56;
+ even;
+end.
+
+Test case 4
+var xxxxxxxxxxxxxx123456, y;
+& begin 000567asdfg %
+	x := y 2excaedasasdfasdfkjdfadsat* 2;
+end.
+
+Test case 5
+m
+7
++
+-
+*
+/
+fi
+=
+<>
+<
+<=
+>
+>=
+(
+)
+,
+;
+.
+:=
+begin
+end
+if
+fi
+then
+while
+do
+call
+const
+var
+procedure
+write
+read
+else
+even
+4lpha
+a+b
+lpha4
+/* Comment should be ignored and not tokenized */
+identifierToLong
+9999999999
+!@_#$^
+
+Test case 6
+!@_#$^
+
+Test case 7
+var x, y;
+/* comment */
+begin
+	x := y * 2;
+end.
+
+Test case 8
+var x, y;
+/* comment 
+begin
+	x := y * 2;
+end.
+
+Test case 9
+var x, y;
+/* 
+mutiple
+comment 
+*/
+begin
+	x := y * 2;
+end.
