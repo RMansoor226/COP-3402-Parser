@@ -71,6 +71,8 @@ typedef enum {
     evensym // even
 } TokenType ;
 
+
+
 typedef struct {
     TokenType type;
     char lexeme[MAX_TOKEN_LENGTH];
@@ -125,6 +127,7 @@ int searchSymbol(char name[]);
 void insertSymbol( int kind, char name[], int val, int addr);
 Token* current();
 void nextToken();
+int convertCommandToCode(char op[4]);
 
 void insertCommand(char op[4], int l, int m) {
     strcpy(OPR[codeIndex].op, op);
@@ -173,6 +176,19 @@ Token* current() {
 void nextToken() {
     if (currentToken < tokenCount - 1)
         currentToken++;
+}
+
+int convertCommandToCode(char op[4]) {
+    if (strcmp(op, "LIT") == 0) return 1;
+    if (strcmp(op, "OPR") == 0) return 2;
+    if (strcmp(op, "LOD") == 0) return 3;
+    if (strcmp(op, "STO") == 0) return 4;
+    if (strcmp(op, "CAL") == 0) return 5;
+    if (strcmp(op, "INC") == 0) return 6;
+    if (strcmp(op, "JMP") == 0) return 7;
+    if (strcmp(op, "JPC") == 0) return 8;
+    if (strcmp(op, "SYS") == 0) return 9;
+    return -1; // Invalid operation
 }
 
 void factor() {
@@ -270,7 +286,10 @@ void statement() {
             printError("only variable values may be altered\n");
 
         nextToken();
+        if (current()->type != becomessym)
+            printError("assignment statements must use ':='\n");
 
+        nextToken();
         expression();
 
         insertCommand("STO", 0, symbolTable[symbolIndex].addr);
@@ -281,10 +300,8 @@ void statement() {
         }
         while (current()->type == semicolonsym);
 
-        if (current()->type != endsym) {
-            printf("%u\n", current()->type);
+        if (current()->type != endsym)
             printError("begin must be followed by end\n");
-        }
         nextToken();
     }   else if (current()->type == ifsym) {
         nextToken();
@@ -296,12 +313,27 @@ void statement() {
 
         int jpcIndex = codeIndex;
         insertCommand("JPC", 0, 0);
+
+        // Parse body of if-statement
         statement();
 
-        if (current()->type != fisym)
-            printError("if must end in fi\n");
-        OPR[jpcIndex].m = codeIndex;
+        // Check if the else keyword is present
+        if (current()->type == elsesym)    {
+            int jmpIndex = codeIndex;
+            insertCommand("JMP", 0, 0);
+            OPR[jpcIndex].m = 3*codeIndex;
+            nextToken();
+            statement(); // Parse else body
+            OPR[jmpIndex].m = 3*codeIndex;
+        }   else {
+            // Check if if-statement is terminated by fi keyword
+            if (current()->type != fisym)
+                printError("if must end in fi\n");
+            OPR[jpcIndex].m = 3*codeIndex;
+        }
+
         nextToken();
+
     }   else if (current()->type == whilesym) {
         int loopIndex = codeIndex;
         nextToken();
@@ -309,13 +341,16 @@ void statement() {
 
         if (current()->type != dosym)
             printError("while must be followed by do\n");
-
         nextToken();
+
         int jpcIndex = codeIndex;
         insertCommand("JPC", 0, 0);
+
         statement();
+
         insertCommand("JMP", 0, loopIndex);
-        OPR[jpcIndex].m = codeIndex;
+
+        OPR[jpcIndex].m = 3*codeIndex;
     }   else if (current()->type == readsym) {
         nextToken();
         if (current()->type != identsym)
@@ -356,8 +391,8 @@ int varDeclaration() {
             }
 
             // Add variable to symbol table
-            insertSymbol(2, current()->lexeme, 0, varCount + 2);
             varCount++;
+            insertSymbol(2, current()->lexeme, 0, varCount + 2);
 
             // Retrieve next token
             nextToken();
@@ -416,17 +451,24 @@ void constDeclaration() {
 }
 
 void block() {
+    int blockStart = symbolCount;
+
     constDeclaration();
     int nums = varDeclaration();
-    insertCommand("INC", 0, nums + 3);
+    insertCommand("INC", 0, nums + 3);\
+
     statement();
+
+    for (int i = blockStart; i < symbolCount; i++) {
+        symbolTable[i].mark = 1;
+    }
 }
 
 void program() {
     block();
-//    if (current()->type != periodsym) {
-//        printError("program must end with period\n");
-//    }
+    if (current()->type != periodsym) {
+        printError("program must end with period\n");
+    }
     insertCommand("SYS", 0, 3);
 }
 
@@ -460,6 +502,7 @@ int main(void) {
 
     // Step 2: Validate grammar
 
+    insertCommand("JMP", 0, 3);
     program();
 
     // Step 3: Generate PM/0 assembly code
@@ -467,14 +510,12 @@ int main(void) {
     printf("Assembly Code:\n\n");
     printf("Line\t OP   L   M\n");
 
-    printf("  0\tJMP   0   3\n");
-
     FILE* elf = fopen("elf.txt", "w");
 
     for (int i = 0; i < codeIndex; i++) {
         if (strcmp(OPR[i].op, "") != 0) {
             printf("%3d%8s%4d%4d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
-            fprintf(elf, "%3d%8s%4d%4d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
+            fprintf(elf, "%d %d %d\n", convertCommandToCode(OPR[i].op), OPR[i].l, OPR[i].m);
         }   else {
             break;
         }
