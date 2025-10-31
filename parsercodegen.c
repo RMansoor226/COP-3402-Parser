@@ -127,7 +127,7 @@ Token* current();
 void nextToken();
 
 void insertCommand(char op[4], int l, int m) {
-    strcpy(op, OPR[codeIndex].op);
+    strcpy(OPR[codeIndex].op, op);
     OPR[codeIndex].l = l;
     OPR[codeIndex].m = m;
     codeIndex++;
@@ -190,7 +190,7 @@ void factor() {
 
         nextToken();
     }   else if (current()->type == numbersym) {
-        insertCommand("LIT", 0, current()->type);
+        insertCommand("LIT", 0, current()->val);
         nextToken();
     }   else if (current()->type == lparentsym) {
         nextToken();
@@ -216,7 +216,6 @@ void term() {
             insertCommand("OPR", 0, 4);
     }
 }
-
 
 void expression() {
     int sign = 0;
@@ -275,19 +274,19 @@ void statement() {
         expression();
 
         insertCommand("STO", 0, symbolTable[symbolIndex].addr);
-    }
-    if (current()->type == beginsym) {
+    }   else if (current()->type == beginsym) {
         do {
             nextToken();
             statement();
         }
         while (current()->type == semicolonsym);
 
-        if (current()->type != endsym)
+        if (current()->type != endsym) {
+            printf("%u\n", current()->type);
             printError("begin must be followed by end\n");
+        }
         nextToken();
-    }
-    if (current()->type == ifsym) {
+    }   else if (current()->type == ifsym) {
         nextToken();
         condition();
 
@@ -296,17 +295,14 @@ void statement() {
         nextToken();
 
         int jpcIndex = codeIndex;
-        insertCommand("JPC", 0, jpcIndex);
+        insertCommand("JPC", 0, 0);
         statement();
 
-        if (current()->type == fisym) {
+        if (current()->type != fisym)
             printError("if must end in fi\n");
-
         OPR[jpcIndex].m = codeIndex;
         nextToken();
-        }
-    }
-    if (current()->type == whilesym) {
+    }   else if (current()->type == whilesym) {
         int loopIndex = codeIndex;
         nextToken();
         condition();
@@ -316,12 +312,11 @@ void statement() {
 
         nextToken();
         int jpcIndex = codeIndex;
-        insertCommand("JPC", 0, jpcIndex);
+        insertCommand("JPC", 0, 0);
         statement();
         insertCommand("JMP", 0, loopIndex);
         OPR[jpcIndex].m = codeIndex;
-    }
-    if (current()->type == readsym) {
+    }   else if (current()->type == readsym) {
         nextToken();
         if (current()->type != identsym)
             printf("const, var, and read keywords must be followed by identifier\n");
@@ -337,8 +332,7 @@ void statement() {
         insertCommand("SYS", 0, 2);
         insertCommand("STO", 0, symbolTable[i].addr);
         nextToken();
-    }
-    if (current()->type == writesym) {
+    }   else if (current()->type == writesym) {
         nextToken();
         expression();
         insertCommand("SYS", 0, 1);
@@ -392,6 +386,9 @@ void constDeclaration() {
             if (searchSymbol(current()->lexeme) != -1)
                 printError("symbol name has already been declared\n");
 
+            char ident[MAX_TOKEN_LENGTH];
+            strcpy(ident, current()->lexeme);
+
             // Retrieve next token and verify if it's =
             nextToken();
             if (current()->type != eqsym)
@@ -403,7 +400,7 @@ void constDeclaration() {
                 printError("constants must be assigned an integer value\n");
 
             // Add constant to symbol table
-            insertSymbol( 1, current()->lexeme, current()->val, 0);
+            insertSymbol( 1, ident, current()->val, 0);
 
             // Retrieve next token
             nextToken();
@@ -427,10 +424,9 @@ void block() {
 
 void program() {
     block();
-    if (current()->type != periodsym) {
-        printf("Error: program must end with period\n");
-        return;
-    }
+//    if (current()->type != periodsym) {
+//        printError("program must end with period\n");
+//    }
     insertCommand("SYS", 0, 3);
 }
 
@@ -443,23 +439,24 @@ int main(void) {
         return 1;
     }
 
-    char buffer[MAX_TOKEN_LENGTH];
-    int size = 0;
+    memset(tokens, 0, sizeof(tokens));
+    memset(symbolTable, 0, sizeof(symbolTable));
+    memset(OPR, 0, sizeof(OPR));
 
-    while (fscanf(inputFile, "%s", buffer) != EOF && size < MAX_TOKENS) {
-        if (isdigit((int) buffer[0])) {
-            if (buffer[0] == skipsym) {
-                printf("Error: Scanning error detected by lexer (skipsym present)");
-                return 1;
-            }
-            tokens[size].val = atoi(buffer);
-        }   else {
-            strncpy(tokens[size].lexeme, buffer, MAX_TOKEN_LENGTH);
+    while (fscanf(inputFile, "%u", &tokens[tokenCount].type) != EOF && tokenCount < MAX_TOKENS) {
+        if (tokens[tokenCount].type == identsym || tokens[tokenCount].type == numbersym) {
+            fscanf(inputFile, "%s", tokens[tokenCount].lexeme);
+            if (tokens[tokenCount].type == skipsym)
+                printError("Scanning error detected by lexer (skipsym present)");
+            if (tokens[tokenCount].type == numbersym)
+                tokens[tokenCount].val = atoi(tokens[tokenCount].lexeme);
         }
-        size++;
+        tokenCount++;
     }
 
     fclose(inputFile);
+
+    currentToken = 0;
 
     // Step 2: Validate grammar
 
@@ -472,9 +469,12 @@ int main(void) {
 
     printf("  0\tJMP   0   3\n");
 
+    FILE* elf = fopen("elf.txt", "w");
+
     for (int i = 0; i < codeIndex; i++) {
         if (strcmp(OPR[i].op, "") != 0) {
-            printf("%3d\t%s\t%d\t%d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
+            printf("%3d%8s%4d%4d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
+            fprintf(elf, "%3d%8s%4d%4d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
         }   else {
             break;
         }
@@ -490,11 +490,9 @@ int main(void) {
     printf("\n");
 
     for (int i = 0; i < MAX_TOKENS; i++) {
-        if (strcmp(symbolTable[i].name, "") != 0) {
-            printf("%4d | \t\t%s | \t%d | \t%d | \t%d | \t%d\n", symbolTable[i].kind, symbolTable[i].name, symbolTable[i].val, symbolTable[i].level, symbolTable[i].addr, symbolTable[i].mark);
-        }   else {
+        if (symbolTable[i].kind == 0)
             break;
-        }
+        printf("%4d | \t\t%s | \t%d | \t%d | \t%d | \t%d\n", symbolTable[i].kind, symbolTable[i].name, symbolTable[i].val, symbolTable[i].level, symbolTable[i].addr, symbolTable[i].mark);
     }
 
     return 0;
