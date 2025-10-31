@@ -29,7 +29,7 @@ Due Date: Friday, October 31, 2025 at 11:59 PM ET
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#define MAX_TOKEN_LENGTH 6
+#define MAX_TOKEN_LENGTH 11
 #define MAX_TOKENS 100
 
 // Token Data Type
@@ -486,10 +486,10 @@ int main(void) {
     memset(OPR, 0, sizeof(OPR));
 
     while (fscanf(inputFile, "%u", &tokens[tokenCount].type) != EOF && tokenCount < MAX_TOKENS) {
+        if (tokens[tokenCount].type == skipsym)
+            printError("Scanning error detected by lexer (skipsym present)");
         if (tokens[tokenCount].type == identsym || tokens[tokenCount].type == numbersym) {
             fscanf(inputFile, "%s", tokens[tokenCount].lexeme);
-            if (tokens[tokenCount].type == skipsym)
-                printError("Scanning error detected by lexer (skipsym present)");
             if (tokens[tokenCount].type == numbersym)
                 tokens[tokenCount].val = atoi(tokens[tokenCount].lexeme);
         }
@@ -514,7 +514,7 @@ int main(void) {
 
     for (int i = 0; i < codeIndex; i++) {
         if (strcmp(OPR[i].op, "") != 0) {
-            printf("%3d%8s%4d%4d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
+            printf("%3d%8s%4d%4d\n", i, OPR[i].op, OPR[i].l, OPR[i].m);
             fprintf(elf, "%d %d %d\n", convertCommandToCode(OPR[i].op), OPR[i].l, OPR[i].m);
         }   else {
             break;
@@ -533,7 +533,7 @@ int main(void) {
     for (int i = 0; i < MAX_TOKENS; i++) {
         if (symbolTable[i].kind == 0)
             break;
-        printf("%4d | \t\t%s | \t%d | \t%d | \t%d | \t%d\n", symbolTable[i].kind, symbolTable[i].name, symbolTable[i].val, symbolTable[i].level, symbolTable[i].addr, symbolTable[i].mark);
+        printf("%4d | \t\t%s | \t%d | \t%d | \t  %d | \t%d\n", symbolTable[i].kind, symbolTable[i].name, symbolTable[i].val, symbolTable[i].level, symbolTable[i].addr, symbolTable[i].mark);
     }
 
     return 0;
