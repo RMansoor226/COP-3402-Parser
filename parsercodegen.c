@@ -32,6 +32,8 @@ Due Date: Friday, October 31, 2025 at 11:59 PM ET
 #define MAX_TOKEN_LENGTH 6
 #define MAX_TOKENS 100
 
+// Token Data Type
+
 typedef enum {
     skipsym = 1 , // Skip / ignore token
     identsym , // Identifier
@@ -69,382 +71,367 @@ typedef enum {
     evensym // even
 } TokenType ;
 
-typedef enum {
-    TOKEN_INT,
-    TOKEN_STRING
-} TOKEN_TYPE;
-
 typedef struct {
-    TOKEN_TYPE type;
-    union {
-        int intVal;
-        char strVal[MAX_TOKEN_LENGTH];
-    } val;
-} TOKEN;
+    TokenType type;
+    char lexeme[MAX_TOKEN_LENGTH];
+    int val;
+} Token;
 
-struct Symbol {
+Token tokens[MAX_TOKENS];
+int currentToken = 0;
+int tokenCount = 0;
+
+// Symbol Table Data Type
+
+typedef struct  {
     int kind; // 1 = const, 2 = var, 3 = proc
     char name[MAX_TOKEN_LENGTH];
     int val;
     int level;
     int addr;
     int mark; // 0 = active, 1 = inactive
-};
+} Symbol;
 
-struct Command {
+Symbol symbolTable[MAX_TOKENS];
+int symbolCount = 0;
+
+// Assembly Instruction Data Type
+
+typedef struct {
     char op[4];
     int l;
     int m;
-};
+} Command;
 
-void insertCommand(char op[4], int l, int m, struct Command OPR[MAX_TOKENS], int index) {
-    strcpy(op, OPR[index].op);
-    OPR[index].l = l;
-    OPR[index].m = m;
+Command OPR[MAX_TOKENS];
+int codeIndex = 0;
+
+// Primary Function Prototypes for parsing and code generation
+
+void factor();
+void term();
+void expression();
+void condition();
+void statement();
+int varDeclaration();
+void constDeclaration();
+void program();
+
+// Helper Function Prototypes
+
+void insertCommand(char op[4], int l, int m);
+void printError(char message[]);
+int searchSymbol(char name[]);
+void insertSymbol( int kind, char name[], int val, int addr);
+Token* current();
+void nextToken();
+
+void insertCommand(char op[4], int l, int m) {
+    strcpy(op, OPR[codeIndex].op);
+    OPR[codeIndex].l = l;
+    OPR[codeIndex].m = m;
+    codeIndex++;
 }
 
-void modifySymbol(struct Symbol symbolTable[MAX_TOKENS], char name[], int val, int addr, int mark) {
-    for (int s = 0; s < MAX_TOKENS; s++) {
-        if (strcmp(symbolTable[s].name, name) == 0) {
-            symbolTable[s].val = val;
-            symbolTable[s].addr = addr;
-            symbolTable[s].mark = mark;
-            break;
-        }
+void printError(char message[]) {
+    printf("Error: %s\n", message);
+    FILE *elf = fopen("elf.txt", "w");
+    if (elf) {
+        fprintf(elf, "Error: %s\n", message);
+        fclose(elf);
     }
+    exit(1);
 }
 
-void insertSymbol(struct Symbol symbolTable[MAX_TOKENS], int kind, char name[], int val, int level, int addr, int mark) {
-    for (int s = 0; s < MAX_TOKENS; s++) {
-        if (symbolTable[s].mark == 1 || symbolTable[s].name[0] == '\0') {
-            symbolTable[s].kind = kind;
-            strncpy(symbolTable[s].name, name, MAX_TOKEN_LENGTH);
-            symbolTable[s].val = val;
-            symbolTable[s].level = level;
-            symbolTable[s].addr = addr;
-            symbolTable[s].mark = mark;
-            break;
-        }
-    }
-}
-
-int alreadyExists(char name[], struct Symbol symbolTable[MAX_TOKENS]) {
-    for (int i=0; i < MAX_TOKENS; i++) {
-        if (strcmp(symbolTable[i].name, name) == 0 && symbolTable[i].mark == 0) {
+int searchSymbol(char name[]) {
+    for (int i = 0; i < symbolCount; i++) {
+        if (!strcmp(symbolTable[i].name, name) && !symbolTable[i].mark) {
             return i;
         }
     }
     return -1;
 }
 
-void factor(TOKEN tokens[], struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    if (tokens[i].val.intVal == identsym) {
-        int symbolIndex = alreadyExists(tokens[i].val.strVal, symbolTable);
-        if (symbolIndex == -1) {
-            printf("Error: undeclared identifier\n");
-            return;
-        }
-        if (symbolTable[symbolIndex].kind == 1) {
-            insertCommand("LIT", 0, symbolTable[symbolIndex].val, OPR, i);
-        } else if (symbolTable[symbolIndex].kind == 2) {
-            insertCommand("LOD", 0, symbolTable[symbolIndex].addr, OPR, i);
-        } else {
-            printf("Custom ! Error: cannot use procedure identifier in expression\n");
-            return;
-        }
-        i++;
+void insertSymbol(int kind, char name[], int val, int addr) {
+    if (searchSymbol(name) != -1) {
+        printf("Error: symbol name has already been declared\n");
         return;
-    }   else if (tokens[i].val.intVal == numbersym) {
-        insertCommand("LIT", 0, tokens[i].val.intVal, OPR, i);
-        i++;
-        return;
-    }   else if (tokens[i].val.intVal == lparentsym) {
-        i++;
-        // expression();
-        if (tokens[i].val.intVal != rparentsym) {
-            printf("Error: right parenthesis must follow left parenthesis\n");
-            return;
-        }
-        i++;
-        return;
+    }
+    symbolTable[symbolCount].kind = kind;
+    strncpy(symbolTable[symbolCount].name, name, MAX_TOKEN_LENGTH);
+    symbolTable[symbolCount].val = val;
+    symbolTable[symbolCount].level = 0;
+    symbolTable[symbolCount].addr = addr;
+    symbolTable[symbolCount].mark = 0;
+    symbolCount++;
+}
+
+Token* current() {
+    return &tokens[currentToken];
+}
+
+void nextToken() {
+    if (currentToken < tokenCount - 1)
+        currentToken++;
+}
+
+void factor() {
+    if (current()->type == identsym) {
+        int symbolIndex = searchSymbol(current()->lexeme);
+
+        if (symbolIndex == -1)
+            printError("undeclared identifier\n");
+
+        if (symbolTable[symbolIndex].kind == 1)
+            insertCommand("LIT", 0, symbolTable[symbolIndex].val);
+        else
+            insertCommand("LOD", 0, symbolTable[symbolIndex].addr);
+
+
+        nextToken();
+    }   else if (current()->type == numbersym) {
+        insertCommand("LIT", 0, current()->type);
+        nextToken();
+    }   else if (current()->type == lparentsym) {
+        nextToken();
+        expression();
+        if (current()->type != rparentsym)
+            printError("right parenthesis must follow left parenthesis\n");
+        nextToken();
     }   else {
-        printf("Maybe !! Error: arithmetic equations must contain operands, parentheses, numbers, or symbols\n");
-        return;
+        printError("arithmetic equations must contain operands, parentheses, numbers, or symbols\n");
     }
 }
 
-void term(TOKEN tokens[], struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    // factor();
-    while (tokens[i].val.intVal == multsym || tokens[i].val.intVal == slashsym || tokens[i].val.intVal == evensym) {
-        int op = tokens[i].val.intVal;
-        i++;
-        // factor();
-        if (op == multsym) {
-            insertCommand("OPR", 0, 3, OPR, i);
-        } else if (op == slashsym) {
-            insertCommand("OPR", 0, 4, OPR, i);
-        } else {
-            insertCommand("OPR", 0, 11, OPR, i);
-        }
+void term() {
+    factor();
+    while (current()->type == multsym || current()->type == slashsym) {
+        int op = current()->type;
+        nextToken();
+        factor();
+
+        if (op == multsym)
+            insertCommand("OPR", 0, 3);
+        else
+            insertCommand("OPR", 0, 4);
     }
 }
 
-void expression(TOKEN tokens[], struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    if (tokens[i].val.intVal == minussym) {
-        i++;
-        // term();
-        // NEG operation
-        while (tokens[i].val.intVal == plussym || tokens[i].val.intVal == minussym) {
-            int op = tokens[i].val.intVal;
-            i++;
-            // term();
-            if (op == plussym) {
-                insertCommand("OPR", 0, 1, OPR, i);
-            } else {
-                insertCommand("OPR", 0, 2, OPR, i);
-            }
-        }
+
+void expression() {
+    int sign = 0;
+
+    if (current()->type == minussym || current()->type == plussym) {
+        sign = (current()->type == minussym) ? 1: 0;
+        nextToken();
+    }
+
+    term();
+    if (sign)
+        insertCommand("OPR", 0, 2);
+
+    while (current()->type == plussym || current()->type == minussym) {
+        int op = current()->type;
+        nextToken();
+        term();
+
+        if (op == plussym)
+            insertCommand("OPR", 0, 1);
+        else
+            insertCommand("OPR", 0, 2);
+    }
+}
+
+void condition() {
+    if (current()->type == evensym) {
+        nextToken();
+        expression();
+        insertCommand("OPR", 0, 11);
     } else {
-        if (tokens[i].val.intVal == plussym) {
-            i++;
-        }
-        // term();
-        while (tokens[i].val.intVal == plussym || tokens[i].val.intVal == minussym) {
-            int op = tokens[i].val.intVal;
-            i++;
-            // term();
-            if (op == plussym) {
-                insertCommand("OPR", 0, 1, OPR, i);
-            } else {
-                insertCommand("OPR", 0, 2, OPR, i);
-            }
-        }
-        insertCommand("OPR", 0, 1, OPR, i);
+        expression();
+        int code = current()->type;
+
+        if (!(code >= eqsym && code <= geqsym))
+            printError("condition must contain comparison operator\n");
+
+        nextToken();
+        expression();
+        insertCommand("OPR", 0, code - eqsym + 5);
     }
 }
 
-void condition(TOKEN tokens[], struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    if (tokens[i].val.intVal == evensym) {
-        i++;
-        // expression();
-        insertCommand("OPR", 0, 11, OPR, i);
-    } else {
-        // expression();
-        int code = tokens[i].val.intVal;
-        i++;
-        // expression();
-        switch (code) {
-            case eqsym:
-                insertCommand("OPR", 0, 5, OPR, i);
-                break;
-            case neqsym:
-                insertCommand("OPR", 0, 6, OPR, i);
-                break;
-            case lessym:
-                insertCommand("OPR", 0, 7, OPR, i);
-                break;
-            case leqsym:
-                insertCommand("OPR", 0, 8, OPR, i);
-                break;
-            case gtrsym:
-                insertCommand("OPR", 0, 9, OPR, i);
-                break;
-            case geqsym:
-                insertCommand("OPR", 0, 10, OPR, i);
-                break;
-            default:
-                printf("Error: condition must contain comparison operator\n");
-                return;
-        }
-    }
-}
+void statement() {
+    if (current()->type == identsym) {
+        int symbolIndex = searchSymbol(current()->lexeme);
 
-void statement(TOKEN tokens[], struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    if (tokens[i].val.intVal == identsym) {
-        int symbolIndex = alreadyExists(tokens[i].val.strVal, symbolTable);
-        if (symbolIndex == -1) {
-            printf("Error: undeclared identifier\n");
-            return;
-        }
-        if (symbolTable[symbolIndex].kind != 2) {
-            printf("Error: only variable values may be altered\n");
-            return;
-        }
-        i++;
-        // expression();
-        insertCommand("STO", 0, symbolTable[symbolIndex].addr, OPR, i);
-        return;
+        if (symbolIndex == -1)
+            printError("undeclared identifier\n");
+
+        if (symbolTable[symbolIndex].kind != 2)
+            printError("only variable values may be altered\n");
+
+        nextToken();
+
+        expression();
+
+        insertCommand("STO", 0, symbolTable[symbolIndex].addr);
     }
-    if (tokens[i].val.intVal == beginsym) {
+    if (current()->type == beginsym) {
         do {
-            i++;
-            // statement(tokens);
+            nextToken();
+            statement();
         }
-        while (tokens[i].val.intVal == semicolonsym);
-        if (tokens[i].val.intVal != endsym) {
-            printf("Error: begin must be followed by end\n");
-            return;
-        }
-        i++;
-        return;
+        while (current()->type == semicolonsym);
+
+        if (current()->type != endsym)
+            printError("begin must be followed by end\n");
+        nextToken();
     }
-    if (tokens[i].val.intVal == ifsym) {
-        i++;
-        // condition();
-        int jpcIndex = i;
-        insertCommand("JPC", 0, jpcIndex, OPR, i);
-        if (tokens[i].val.intVal != thensym) {
-            printf("Error: if must be followed by then\n");
-            return;
+    if (current()->type == ifsym) {
+        nextToken();
+        condition();
+
+        if (current()->type != thensym)
+            printError("if must be followed by then\n");
+        nextToken();
+
+        int jpcIndex = codeIndex;
+        insertCommand("JPC", 0, jpcIndex);
+        statement();
+
+        if (current()->type == fisym) {
+            printError("if must end in fi\n");
+
+        OPR[jpcIndex].m = codeIndex;
+        nextToken();
         }
-        i++;
-        // statement();
-        // code[jpcIndex].M = i;
-        return;
     }
-    if (tokens[i].val.intVal == whilesym) {
-        i++;
-        int loopIndex = i;
-        // condition();
-        if (tokens[i].val.intVal != dosym) {
-            printf("Error: while must be followed by do\n");
-            return;
-        }
-        i++;
-        int jpcIndex = i;
-        insertCommand("JPC", 0, jpcIndex, OPR, i);
-        // statement();
-        insertCommand("JMP", 0, loopIndex, OPR, i);
-        // code[jpcIndex].M = i;
-        return;
+    if (current()->type == whilesym) {
+        int loopIndex = codeIndex;
+        nextToken();
+        condition();
+
+        if (current()->type != dosym)
+            printError("while must be followed by do\n");
+
+        nextToken();
+        int jpcIndex = codeIndex;
+        insertCommand("JPC", 0, jpcIndex);
+        statement();
+        insertCommand("JMP", 0, loopIndex);
+        OPR[jpcIndex].m = codeIndex;
     }
-    if (tokens[i].val.intVal == readsym) {
-        i++;
-        if (tokens[i].val.intVal != identsym) {
-            printf("Error: const, var, and read keywords must be followed by identifier\n");
-            return;
-        }
-        i++;
-        insertCommand("SYS", 0, 3, OPR, i);
-        insertCommand("STO", 0, symbolTable[i].addr, OPR, i);
-        return;
+    if (current()->type == readsym) {
+        nextToken();
+        if (current()->type != identsym)
+            printf("const, var, and read keywords must be followed by identifier\n");
+
+        int i = searchSymbol(current()->lexeme);
+
+        if (i == -1)
+            printError("undeclared identifier\n");
+
+        if (symbolTable[i].kind != 2)
+            printError("only variable values may be altered\n");
+
+        insertCommand("SYS", 0, 2);
+        insertCommand("STO", 0, symbolTable[i].addr);
+        nextToken();
     }
-    if (tokens[i].val.intVal == writesym) {
-        i++;
-        //expression();
-        insertCommand("SYS", 0, 1, OPR, i);
-        return;
+    if (current()->type == writesym) {
+        nextToken();
+        expression();
+        insertCommand("SYS", 0, 1);
     }
 }
 
-int varDeclaration(TOKEN tokens[], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    char ident[MAX_TOKEN_LENGTH];
+int varDeclaration() {
     int varCount = 0;
+
     // Retrieve token and verify if it's a var keyword
-    if (tokens[i].val.intVal == varsym) {
+    if (current()->type == varsym) {
         do {
             // Retrieve next token and verify if it's an identifier
-            i++;
-            if (tokens[i].val.intVal != identsym) {
-                printf("Error: const, var, and read keywords must be followed by identifier\n");
-                return -1;
-            }
+            nextToken();
+            if (current()->type != identsym)
+                printError("const, var, and read keywords must be followed by identifier\n");
+
             // Check if identifier already exists in symbol table
-            if (alreadyExists(tokens[i].val.strVal, symbolTable) != -1) {
-                printf("Error: symbol name has already been declared\n");
-                return -1;
+            if (searchSymbol(current()->lexeme) != -1) {
+                printError("symbol name has already been declared\n");
             }
-            // Store unique identifier
-            strncpy(tokens[i].val.strVal, ident, MAX_TOKEN_LENGTH);
+
             // Add variable to symbol table
-            insertSymbol(symbolTable, 2, ident, 0, 0, varCount + 2, 0);
+            insertSymbol(2, current()->lexeme, 0, varCount + 2);
             varCount++;
+
             // Retrieve next token
-            i++;
+            nextToken();
         }
 
         // Check if it's a comma or semicolon
-        while (tokens[i].val.intVal == commasym);
+        while (current()->type == commasym);
 
-        if (tokens[i].val.intVal != semicolonsym) {
-            printf("Error: constant and variable declarations must be followed by a semicolon\n");
-            return -1;
-        }
-
-        i++;
+        if (current()->type != semicolonsym)
+            printError("constant and variable declarations must be followed by a semicolon\n");
+        nextToken();
     }
     return varCount;
 }
 
-void constDeclaration(TOKEN tokens[], struct Symbol symbolTable[MAX_TOKENS]) {
-    int i = 0;
-    char ident[MAX_TOKEN_LENGTH];
-
-    do {
-        // Retrieve token and verify if it's a const keyword
-        if (tokens[i].val.intVal == constsym) {
+void constDeclaration() {
+    // Retrieve token and verify if it's a const keyword
+    if (current()->type == constsym) {
+        do {
             // Retrieve next token and verify if it's an identifier
-            i++;
-            if (tokens[i].val.intVal != identsym) {
-                printf("Error: const, var, and read keywords must be followed by identifier\n");
-                return;
-            }
+            nextToken();
+            if (current()->type != identsym)
+                printError("const, var, and read keywords must be followed by identifier\n");
+
             // Check if identifier already exists in symbol table
-            if (alreadyExists(tokens[i].val.strVal, symbolTable) != -1) {
-                printf("Error: symbol name has already been declared\n");
-                return;
-            }
-            // Store unique identifier
-            strncpy(tokens[i].val.strVal, ident, MAX_TOKEN_LENGTH);
+            if (searchSymbol(current()->lexeme) != -1)
+                printError("symbol name has already been declared\n");
+
             // Retrieve next token and verify if it's =
-            i++;
-            if (tokens[i].val.intVal != eqsym) {
-                printf("Error: constants must be assigned with =\n");
-                return;
-            }
+            nextToken();
+            if (current()->type != eqsym)
+                printError("constants must be assigned with =\n");
+
             // Retrieve next token and verify if it's a number
-            i++;
-            if (tokens[i].val.intVal != numbersym) {
-                printf("Error: constants must be assigned an integer value\n");
-                return;
-            }
+            nextToken();
+            if (current()->type != numbersym)
+                printError("constants must be assigned an integer value\n");
+
             // Add constant to symbol table
-            insertSymbol(symbolTable, 1, ident, tokens[i].val.intVal, 0, 0, 0);
+            insertSymbol( 1, current()->lexeme, current()->val, 0);
+
             // Retrieve next token
-            i++;
+            nextToken();
         }
-    }
-    // Check if it's a comma or semicolon
-    while (tokens[i].val.intVal == commasym);
+        // Check if it's a comma or semicolon
+        while (current()->type == commasym);
 
-    if (tokens[i].val.intVal != semicolonsym) {
-        printf("Error: constant and variable declarations must be followed by a semicolon\n");
-        return;
+        if (current()->type != semicolonsym)
+            printError("constant and variable declarations must be followed by a semicolon\n");
+        nextToken();
     }
-    i++;
+
 }
 
-void block(TOKEN tokens[], struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    constDeclaration(tokens, symbolTable);
-    int nums = varDeclaration(tokens, symbolTable);
-    insertCommand("INC", 0, nums + 3, OPR, 0);
-    statement(tokens, OPR, symbolTable);
+void block() {
+    constDeclaration();
+    int nums = varDeclaration();
+    insertCommand("INC", 0, nums + 3);
+    statement();
 }
 
-void program(TOKEN tokens[], int size, struct Command OPR[MAX_TOKENS], struct Symbol symbolTable[MAX_TOKENS]) {
-    block(tokens, OPR, symbolTable);
-    if (tokens[size-2].val.intVal == numbersym || tokens[size-1].val.intVal != periodsym) {
+void program() {
+    block();
+    if (current()->type != periodsym) {
         printf("Error: program must end with period\n");
         return;
     }
-    int oprSize = sizeof(OPR) / sizeof(OPR[0]);
-    insertCommand("SYS", 0, 3, OPR, oprSize - 1);
+    insertCommand("SYS", 0, 3);
 }
 
 int main(void) {
@@ -452,11 +439,10 @@ int main(void) {
     FILE* inputFile = fopen("tokenlist.txt", "r");
 
     if (!inputFile) {
-        printf(stderr, "Error opening token list file.\n");
+        printf(stderr, "Error: failed opening token list file.\n");
         return 1;
     }
 
-    TOKEN tokens[MAX_TOKENS];
     char buffer[MAX_TOKEN_LENGTH];
     int size = 0;
 
@@ -466,12 +452,9 @@ int main(void) {
                 printf("Error: Scanning error detected by lexer (skipsym present)");
                 return 1;
             }
-            tokens[size].type = TOKEN_INT;
-            tokens[size].val.intVal = atoi(buffer);
+            tokens[size].val = atoi(buffer);
         }   else {
-            tokens[size].type = TOKEN_STRING;
-            strncpy(tokens[size].val.strVal, buffer, MAX_TOKEN_LENGTH);
-            tokens[size].val.strVal[MAX_TOKEN_LENGTH - 1] = '\0';
+            strncpy(tokens[size].lexeme, buffer, MAX_TOKEN_LENGTH);
         }
         size++;
     }
@@ -480,11 +463,7 @@ int main(void) {
 
     // Step 2: Validate grammar
 
-    struct Command OPR[MAX_TOKENS];
-
-    struct Symbol symbolTable[MAX_TOKENS];
-
-    program(tokens, size, OPR, symbolTable);
+    program();
 
     // Step 3: Generate PM/0 assembly code
 
@@ -493,9 +472,9 @@ int main(void) {
 
     printf("  0\tJMP   0   3\n");
 
-    for (int k = 0; k < MAX_TOKENS; k++) {
-        if (strcmp(OPR[k].op, "") != 0) {
-            printf("%3d\t%s\t%d\t%d\n", k + 1, OPR[k].op, OPR[k].l, OPR[k].m);
+    for (int i = 0; i < codeIndex; i++) {
+        if (strcmp(OPR[i].op, "") != 0) {
+            printf("%3d\t%s\t%d\t%d\n", i + 1, OPR[i].op, OPR[i].l, OPR[i].m);
         }   else {
             break;
         }
@@ -509,11 +488,10 @@ int main(void) {
         printf("-");
     }
     printf("\n");
-    // Placeholder for symbol table entries
 
-    for (int l = 0; l < MAX_TOKENS; l++) {
-        if (strcmp(symbolTable[l].name, "") != 0) {
-            printf("%4d | \t\t%s | \t%d | \t%d | \t%d | \t%d\n", symbolTable[l].kind, symbolTable[l].name, symbolTable[l].val, symbolTable[l].level, symbolTable[l].addr, symbolTable[l].mark);
+    for (int i = 0; i < MAX_TOKENS; i++) {
+        if (strcmp(symbolTable[i].name, "") != 0) {
+            printf("%4d | \t\t%s | \t%d | \t%d | \t%d | \t%d\n", symbolTable[i].kind, symbolTable[i].name, symbolTable[i].val, symbolTable[i].level, symbolTable[i].addr, symbolTable[i].mark);
         }   else {
             break;
         }
